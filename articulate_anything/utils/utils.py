@@ -113,12 +113,7 @@ def config_to_command(cfg: DictConfig, script_path: str, conda_env: str = "artic
 
 def make_cmd(script_path: str, conda_env: str = "articulate-anything",
              cmd_args=[]):
-    # Construct the command
-    command = [
-        "conda", "run", "-n", conda_env,
-        "python", script_path
-    ] + cmd_args
-
+    command = [sys.executable, script_path] + cmd_args
     return command
 
 
@@ -136,11 +131,15 @@ def run_subprocess(command: List[str], env=None) -> None:
     command = [str(c) for c in command]
     if env is None:
         env = os.environ.copy()
+    # always run from the project root so relative script/asset paths work
+    # even when hydra has changed the working directory to an outputs/ subdir
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     try:
-        subprocess.run(command, check=True, env=env)
+        subprocess.run(command, check=True, env=env, cwd=project_root)
 
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
         logging.error(f"Command failed with error: {e}")
+        raise
 
 
 class Steps:

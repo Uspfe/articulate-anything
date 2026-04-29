@@ -15,7 +15,6 @@ from articulate_anything.preprocess.preprocess_utils import (
     mask_urdf,
 )
 from typing import Optional
-from articulate_anything.agent.actor.mesh_retrieval.partnet_mesh_annotator import combine_meshes
 from articulate_anything.api.odio_urdf import process_urdf
 import logging
 
@@ -46,6 +45,13 @@ def render_object(urdf_file: str, gpu_id: str, simulator_cfg: DictConfig, render
     run_subprocess(command, env=env)
 
 
+def has_valid_image(obj_id: str, cfg: DictConfig) -> bool:
+    obj_dir = join_path(cfg.dataset_dir, obj_id)
+    cam_view = next(iter(cfg.simulator.camera_params.views))
+    img_path = join_path(obj_dir, f"robot_{cam_view}.png")
+    return os.path.exists(img_path) and os.path.getsize(img_path) > 0
+
+
 def render_partnet_obj(obj_id: str, gpu_id: str, cfg: DictConfig, render_mode: str = "move", urdf_file: Optional[str] = None):
     """
     Render a PartNet object, handling PartNet-specific logic.
@@ -64,9 +70,11 @@ def render_partnet_obj(obj_id: str, gpu_id: str, cfg: DictConfig, render_mode: s
     if get_obj_type(obj_id) == "Chair":
         simulator_cfg.urdf.raise_distance_offset = 0.15
 
-    rotate_urdf(urdf_file)
+    # rotate_urdf already done on preprocessed dataset (.legacy backup exists)
+    # rotate_urdf(urdf_file)
     render_object(urdf_file, gpu_id, simulator_cfg, render_mode)
-    combine_meshes(obj_dir)
+    # combine_meshes already done on preprocessed dataset
+    # combine_meshes(obj_dir)
 
 
 def rotate_urdf(urdf_file: str):
@@ -116,6 +124,16 @@ def preprocess_partnet_object(obj_id: str, gpu_id: str, cfg: DictConfig,):
 
 @hydra.main(version_base=None, config_path="../../conf", config_name="config")
 def preprocess_objects(cfg: DictConfig):
+    # # vvv DEBUG: single-object override — delete these three lines to revert vvv
+    cfg.obj_ids = ["45749",
+        "101399",
+        "45671",
+        "101960",
+        "104041",]
+    cfg.dataset_dir = "datasets/partnet-mobility-v0/dataset"
+    cfg.modality = "image"
+    # # ^^^ END DEBUG ^^^
+
     if isinstance(cfg.obj_ids, int):
         cfg.obj_ids = [cfg.obj_ids]
     elif isinstance(cfg.obj_ids, str):
@@ -125,6 +143,11 @@ def preprocess_objects(cfg: DictConfig):
     cfg.obj_ids = list(map(str, cfg.obj_ids))
 
  
+    if cfg.modality in ("image", "video"):
+        before = len(cfg.obj_ids)
+        cfg.obj_ids = [oid for oid in cfg.obj_ids if not has_valid_image(oid, cfg)]
+        logging.info(f"Skipping {before - len(cfg.obj_ids)} objects with valid images; {len(cfg.obj_ids)} to re-render.")
+
     process_function = {
         "text": render_parts,
         "image": lambda obj_id, gpu_id, cfg: render_partnet_obj(obj_id, gpu_id, cfg, render_mode="stationary"),

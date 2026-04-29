@@ -16,4 +16,6 @@ imgui.ini
 
 *.zip
 *scans
-*.pkl
+*.pkl# pixi environments
+.pixi/*
+!.pixi/config.toml
